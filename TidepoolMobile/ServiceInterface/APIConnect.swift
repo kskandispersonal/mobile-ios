@@ -35,6 +35,15 @@ protocol UsersFetchAPIWatcher {
     func viewableUsers(_ userIds: [String])
 }
 
+//KS
+public enum UploadError: Error {
+    case httpError(status: Int, body: String)
+    case missingTimezone
+    case invalidResponse(reason: String)
+    case unauthorized
+}
+//KS **end**
+
 /// APIConnector is a singleton object with the main responsibility of communicating to the Tidepool service:
 /// - Given a username and password, login.
 /// - Can refresh connection.
@@ -61,6 +70,43 @@ class APIConnector {
     // Error domain and codes
     fileprivate let kTidepoolMobileErrorDomain = "TidepoolMobileErrorDomain"
     fileprivate let kNoSessionTokenErrorCode = -1
+    
+    //KS
+    fileprivate let kCurrentNSurlDefaultKey = "SCurrentNSurl"
+    fileprivate let kCurrentNSsecretDefaultKey = "SCurrentNSsecret"
+    fileprivate let defaultNightscoutTreatmentPath = "/api/v1/treatments"
+    private let defaultNightscoutAuthTestPath = "/api/v1/experiments/test"
+    fileprivate var _nssiteURL: String?
+    var nssiteURL: String? {
+        set(newNSurl) {
+            if ( newNSurl != nil ) {
+                UserDefaults.standard.setValue(newNSurl, forKey:kCurrentNSurlDefaultKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: kCurrentNSurlDefaultKey)
+            }
+            UserDefaults.standard.synchronize()
+            _nssiteURL = newNSurl
+        }
+        get {
+            return _nssiteURL
+        }
+    }
+    fileprivate var _nsapiSecret: String? // = "xxxxxxxxxxx" as String
+    var nsapiSecret: String? {
+        set(newNSsecret) {
+            if ( newNSsecret != nil ) {
+                UserDefaults.standard.setValue(newNSsecret, forKey:kCurrentNSsecretDefaultKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: kCurrentNSsecretDefaultKey)
+            }
+            UserDefaults.standard.synchronize()
+            _nsapiSecret = newNSsecret
+        }
+        get {
+            return _nsapiSecret
+        }
+    }
+    //KS
     
     // Session token, acquired on login and saved in NSUserDefaults
     // TODO: save in database?
@@ -93,8 +139,8 @@ class APIConnector {
         "Integration",
         "Production"
     ]
-    fileprivate let kDefaultServerName = "Production"
-    //fileprivate let kDefaultServerName = "Integration"
+    //fileprivate let kDefaultServerName = "Production"//KS
+    fileprivate let kDefaultServerName = "Integration"//KS
 
     fileprivate var _currentService: String?
     var currentService: String? {
@@ -153,6 +199,10 @@ class APIConnector {
     
     /// Creator of APIConnector must call this function after init!
     func configure() -> APIConnector {
+        
+        nsapiSecret = "xxxxxxxxxxx"//KS
+        nssiteURL = "https://YOURSITE.herokuapp.com"//KS
+        
         HealthKitUploadManager.sharedInstance.makeDataUploadRequestHandler = self.blipMakeDataUploadRequest
         self.baseUrl = URL(string: kServers[currentService!]!)!
         DDLogInfo("Using service: \(String(describing: self.baseUrl))")
@@ -199,6 +249,10 @@ class APIConnector {
         self.lastNetworkError = nil
         // Set our endpoint for login
         let endpoint = "auth/login"
+        
+        checkAuth { (error) in //KS
+            DDLogInfo("checkAuth: \(String(describing: error))")
+        }
         
         // Create the authorization string (user:pass base-64 encoded)
         let base64LoginString = NSString(format: "%@:%@", trimmedUsername, password)
@@ -1099,7 +1153,127 @@ class APIConnector {
         
         blipRequest("POST", urlExtension: urlExtension, headerDict: headerDict, body: body, completion: completion)
     }
-
+    
+    //KS **start**
+    func doPostWithNote(note: BlipNote) {
+        
+        var urlExtension = ""
+        if let parentMessage = note.parentmessage {
+            // this is a reply
+            urlExtension = "/message/reply/" + parentMessage
+        } else {
+            // this is a note, i.e., start of a thread
+            urlExtension = "/message/send/" + note.groupid
+        }
+        
+        let headerDict = [kSessionTokenHeaderId:"\(sessionToken!)", "Content-Type":"application/json"]
+        
+        let jsonObject = note.dictionaryFromNote()
+        let body: Data?
+        do {
+            body = try JSONSerialization.data(withJSONObject: jsonObject, options: [])
+        } catch {
+            body = nil
+        }
+        
+        let completion = { (response: URLResponse?, data: Data?, error: NSError?) -> Void in
+            if let httpResponse = response as? HTTPURLResponse {
+                
+                if (httpResponse.statusCode == 201) {
+                    DDLogInfo("Sent note for groupid: \(note.groupid)")
+                    
+                    let jsonResult: NSDictionary = ((try? JSONSerialization.jsonObject(with: data!, options: JSONSerialization.ReadingOptions.mutableContainers)) as? NSDictionary)!
+                    
+                    note.id = jsonResult.value(forKey: "id") as! String
+                    //EventListViewController.postComplete(note)
+                    
+                } else {
+                    DDLogError("Did not send note for groupid \(note.groupid) - invalid status code \(httpResponse.statusCode)")
+                    self.alertWithOkayButton(self.unknownError, message: self.unknownErrorMessage)
+                }
+            } else {
+                DDLogError("Did not send note for groupid \(note.groupid) - could not parse response")
+                self.alertWithOkayButton(self.unknownError, message: self.unknownErrorMessage)
+            }
+        }
+        
+        blipRequest("POST", urlExtension: urlExtension, headerDict: headerDict, body: body, completion: completion)
+    }
+    
+    func doPostWithNSNote(note: NightscoutTreatment) {
+        
+        let urlExtension = defaultNightscoutTreatmentPath
+        let headerDict = ["Content-Type":"application/json", "Accept":"application/json", "api-secret":nsapiSecret!.sha1()]
+        
+        let jsonObject = note.dictionaryRepresentation
+        let body: Data?
+        do {
+            body = try JSONSerialization.data(withJSONObject: jsonObject, options: .prettyPrinted)
+        } catch {
+            body = nil
+        }
+        
+        let _: Error?
+        checkAuth { (error) in
+            DDLogInfo("checkAuth: \(String(describing: error))")
+        }
+        
+        let completion = { (response: URLResponse?, data: Data?, error: NSError?) -> Void in
+            if let httpResponse = response as? HTTPURLResponse {
+                
+                if (httpResponse.statusCode == 200) {//201
+                    DDLogInfo("Sent note for groupid: \(String(describing: note.notes))")
+                    
+                    /*let jsonResult: NSDictionary = ((try? JSONSerialization.jsonObject(with: data!, options: JSONSerialization.ReadingOptions.mutableContainers)) as? NSDictionary)!
+                    
+                    note.id = jsonResult.value(forKey: "id") as? String
+                    EventListViewController.postComplete(note)*/
+                    
+                } else {
+                    DDLogError("Did not send note for groupid \(String(describing: note.notes)) - invalid status code \(httpResponse.statusCode)")
+                    self.alertWithOkayButton(self.unknownError, message: self.unknownErrorMessage)
+                }
+            } else {
+                DDLogError("Did not send note for groupid \(String(describing: note.notes)) - could not parse response")
+                self.alertWithOkayButton(self.unknownError, message: self.unknownErrorMessage)
+            }
+        }
+        
+        blipRequest("POST", urlExtension: urlExtension, headerDict: headerDict, body: body, completion: completion)
+    }
+    
+    func checkAuth(_ completion: @escaping (Error?) -> Void) {
+        
+        let url = URL(string: nssiteURL ?? "")
+        guard let testURL = url?.appendingPathComponent(defaultNightscoutAuthTestPath) else { return }
+        
+        var request = URLRequest(url: testURL)
+        
+        request.setValue("application/json", forHTTPHeaderField:"Content-Type")
+        request.setValue("application/json", forHTTPHeaderField:"Accept")
+        request.setValue(nsapiSecret?.sha1(), forHTTPHeaderField:"api-secret")
+        let task = URLSession.shared.dataTask(with: request, completionHandler: { (data, response, error) in
+            if let error = error {
+                completion(error)
+                return
+            }
+            
+            if let httpResponse = response as? HTTPURLResponse ,
+                httpResponse.statusCode != 200 {
+                if httpResponse.statusCode == 401 {
+                    completion(UploadError.unauthorized)
+                } else {
+                    let error = UploadError.httpError(status: httpResponse.statusCode, body:String(data: data!, encoding: String.Encoding.utf8)!)
+                    completion(error)
+                }
+            } else {
+                completion(nil)
+            }
+        })
+        task.resume()
+    }
+    //KS **end**
+    
     // update note or comment...
     func updateNote(_ updateWatcher: NoteAPIWatcher, editedNote: BlipNote, originalNote: BlipNote) {
         
@@ -1218,10 +1392,12 @@ class APIConnector {
 
     func blipRequest(_ method: String, urlExtension: String, headerDict: [String: String], body: Data?, preRequest: (() -> Void)? = nil, completion: @escaping (_ response: URLResponse?, _ data: Data?, _ error: NSError?) -> Void) {
         
-        if (self.isConnectedToNetwork()) {
-            preRequest?()
+        if (self.isConnectedToNetwork() || urlExtension == defaultNightscoutTreatmentPath) { //KS add defaultNightscoutTreatmentPath
+            if (urlExtension != defaultNightscoutTreatmentPath) {//KS
+                preRequest?()
+            }
             
-            let baseURL = kServers[currentService!]!
+            let baseURL = ((defaultNightscoutTreatmentPath == urlExtension) ? nssiteURL : kServers[currentService!]) ?? ""
             var urlString = baseURL + urlExtension
             urlString = urlString.addingPercentEncoding(withAllowedCharacters: CharacterSet.urlQueryAllowed)!
             let url = URL(string: urlString)
@@ -1230,6 +1406,7 @@ class APIConnector {
             for (field, value) in headerDict {
                 request.setValue(value, forHTTPHeaderField: field)
             }
+            
             // make user-agent similar to that from Alamofire
             request.setValue(self.userAgentString(), forHTTPHeaderField: "User-Agent")
             request.httpBody = body

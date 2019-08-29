@@ -51,7 +51,10 @@ class DebugSettings : NSObject, MFMailComposeViewControllerDelegate {
         actionSheet.addAction(UIAlertAction(title: "Email logs", style: .default, handler: { Void in
             self.handleEmailLogs()
         }))
-
+        actionSheet.addAction(UIAlertAction(title: "Nightscout Upload", style: .default, handler: { Void in//KS
+            self.handleNightscoutUpload(title: "Nightscout Upload", message: "Enter settings")
+        }))
+        
         /*
         let isTreatingAllBloodGlucoseSourceTypesAsDexcom = UserDefaults.standard.bool(forKey: HealthKitSettings.TreatAllBloodGlucoseSourceTypesAsDexcomKey)
         if isTreatingAllBloodGlucoseSourceTypesAsDexcom {
@@ -108,12 +111,59 @@ class DebugSettings : NSObject, MFMailComposeViewControllerDelegate {
         self.presentingViewController?.present(actionSheet, animated: true, completion: nil)
     }
     
+    //KS
+    fileprivate func handleNightscoutUpload(title: String, message: String) {
+        let api = APIConnector.connector()
+        //Step : 1
+        let alert = UIAlertController(title: title, message: message, preferredStyle: UIAlertController.Style.alert)
+        
+        //Step : 2
+        alert.addAction (UIAlertAction(title: "Save", style: .default) { (alertAction) in
+            let textField = alert.textFields![0]
+            let textField2 = alert.textFields![1]
+            if textField.text != "" {
+                //Read textfield data
+                print(textField.text!)
+                print("TF 1 : \(textField.text!)")
+                api.nssiteURL = textField.text
+            } else {
+                print("TF 1 is Empty...")
+            }
+            if textField2.text != "" {
+                //Read textfield data
+                print(textField2.text!)
+                print("TF 2 : \(textField2.text!)")
+                api.nsapiSecret = textField2.text
+            } else {
+                print("TF 2 is Empty...")
+            }
+        })
+        
+        //Step : 3
+        //For first TF
+        alert.addTextField { (textField) in
+            textField.placeholder = api.nssiteURL
+            textField.textColor = .red
+        }
+        //For second TF
+        alert.addTextField { (textField) in
+            textField.placeholder = api.nsapiSecret
+            textField.textColor = .blue
+        }
+        
+        //Cancel action
+        alert.addAction(UIAlertAction(title: "Cancel", style: .default) { (alertAction) in })
+        self.presentingViewController?.present(alert, animated:true, completion: nil)
+        
+    }
+    
     fileprivate func handleEnableNotificationsForUploads(enable: Bool) {
         AppDelegate.testMode = enable
         if enable {
             UIApplication.enableLocalNotifyMessages()
         }
     }
+    //KS **end**
     
     /*
     fileprivate func handleTreatAllBloodGlucoseSourceTypesAsDexcom(treatAllAsDexcom: Bool) {

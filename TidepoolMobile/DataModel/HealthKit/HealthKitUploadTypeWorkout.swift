@@ -45,7 +45,9 @@ class HealthKitUploadTypeWorkout: HealthKitUploadType {
                 super.addCommonFields(sampleToUploadDict: &sampleToUploadDict, sample: sample)
  
                 // service syntax for optional duration value: [float64; required; 0 <= x <= 1 week in appropriate units]
+                var noteDuration = 0 as Double //KS
                 if workout.duration < kOneWeekInSeconds && workout.duration >= 0.0 {
+                    noteDuration = workout.duration / 60 //KS
                     let duration = [
                         "units": "seconds",
                         "value": workout.duration
@@ -71,6 +73,7 @@ class HealthKitUploadTypeWorkout: HealthKitUploadType {
                     }
                 }
                 
+                var noteKcal = 0 as Double //KS
                 if let energyBurned = workout.totalEnergyBurned?.doubleValue(for: HKUnit.largeCalorie()) {
                     // service syntax for optional energy value: [float64; required]. Also, between 0 and 10000
                     let kEnergyValueKilocaloriesMaximum = 10000.0
@@ -78,6 +81,7 @@ class HealthKitUploadTypeWorkout: HealthKitUploadType {
                     if energyBurned < kEnergyValueKilocaloriesMinimum || energyBurned > kEnergyValueKilocaloriesMaximum {
                         DDLogError("Workout sample with out-of-range energy: \(energyBurned) kcal, skipping energy field!")
                     } else {
+                        noteKcal = energyBurned //KS
                         let energy = [
                             "units": "kilocalories",
                             "value": energyBurned
@@ -90,7 +94,7 @@ class HealthKitUploadTypeWorkout: HealthKitUploadType {
                 var name = self.stringsForHKWorkoutActivityType(workout.workoutActivityType).userStr
                 if let floatMiles = floatMiles {
                     // service syntax for name: [string; optional; 0 < len <= 100]
-                    name = name + " - " + String(format: "%.2f",floatMiles) + " miles"
+                    name = name + " " + String(format: "%.2f",floatMiles) + " mi"
                 }
                 if !name.isEmpty {
                     sampleToUploadDict["name"] = name as AnyObject
@@ -102,6 +106,37 @@ class HealthKitUploadTypeWorkout: HealthKitUploadType {
                 }
 
                 samplesToUploadDictArray.append(sampleToUploadDict)
+                
+                //KS **start**
+                let userId = TidepoolMobileDataController.sharedInstance.currentUserId!
+                let note = BlipNote()
+                note.userid = userId
+                note.groupid = userId
+                note.timestamp = workout.startDate //Date()
+                //_ = sampleToUploadDict.removeValue(forKey: "origin")
+
+                if let theJSONData = try? JSONSerialization.data(
+                    withJSONObject: sampleToUploadDict,
+                    options: .prettyPrinted) {
+                    let jsonString = String(data: theJSONData,
+                                             encoding: .utf8)
+                    print("JSON string = \(jsonString!)")
+                    var msg = "#exercise " + String(sampleToUploadDict["name"] as! String) + " "
+                    //msg = msg + String(format: "%f.2f", noteDuration) + " mins "
+                    msg = msg + String (Int(noteDuration.rounded())) + " mins "
+                    //msg = msg + String(format: "%.2f", noteKcal) + " kcal "
+                    msg = msg + String(Int(noteKcal.rounded())) + " kcal "
+                    print("note.messagetext string = \(msg)")
+                    note.messagetext = msg
+                    APIConnector.connector().doPostWithNote(note: note)
+                    let enteredBy = "loop://\(UIDevice.current.name)"
+                    let nsnote = NightscoutTreatment(timestamp: workout.startDate, enteredBy: enteredBy, notes: msg,
+                                                     eventType: "Exercise", duration: noteDuration as Double)
+                    print("nsnote = \(String(describing: nsnote))")
+                    APIConnector.connector().doPostWithNSNote(note: nsnote)
+                }
+                //KS **end**
+
             }
             
         }
