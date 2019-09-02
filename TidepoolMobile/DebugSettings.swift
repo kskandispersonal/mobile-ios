@@ -54,6 +54,15 @@ class DebugSettings : NSObject, MFMailComposeViewControllerDelegate {
         actionSheet.addAction(UIAlertAction(title: "Nightscout Upload", style: .default, handler: { Void in//KS
             self.handleNightscoutUpload(title: "Nightscout Upload", message: "Enter settings")
         }))
+        if api.workoutNotes == false {
+            actionSheet.addAction(UIAlertAction(title: "Enable Workout Notes", style: .default, handler: { Void in
+                api.workoutNotes = true
+            }))
+        } else {
+            actionSheet.addAction(UIAlertAction(title: "Disable Workout Notes", style: .default, handler: { Void in
+                api.workoutNotes = false
+            }))
+        }
         
         /*
         let isTreatingAllBloodGlucoseSourceTypesAsDexcom = UserDefaults.standard.bool(forKey: HealthKitSettings.TreatAllBloodGlucoseSourceTypesAsDexcomKey)
@@ -121,6 +130,7 @@ class DebugSettings : NSObject, MFMailComposeViewControllerDelegate {
         alert.addAction (UIAlertAction(title: "Save", style: .default) { (alertAction) in
             let textField = alert.textFields![0]
             let textField2 = alert.textFields![1]
+            let textField3 = alert.textFields![2]
             if textField.text != "" {
                 //Read textfield data
                 print(textField.text!)
@@ -137,6 +147,7 @@ class DebugSettings : NSObject, MFMailComposeViewControllerDelegate {
             } else {
                 print("TF 2 is Empty...")
             }
+            api.exerciseTag = textField3.text
         })
         
         //Step : 3
@@ -149,6 +160,11 @@ class DebugSettings : NSObject, MFMailComposeViewControllerDelegate {
         alert.addTextField { (textField) in
             textField.placeholder = api.nsapiSecret
             textField.textColor = .blue
+        }
+        //For third TF
+        alert.addTextField { (textField) in
+            textField.placeholder = api.exerciseTag
+            textField.textColor = .green
         }
         
         //Cancel action

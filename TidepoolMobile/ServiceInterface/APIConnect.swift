@@ -74,8 +74,14 @@ class APIConnector {
     //KS
     fileprivate let kCurrentNSurlDefaultKey = "SCurrentNSurl"
     fileprivate let kCurrentNSsecretDefaultKey = "SCurrentNSsecret"
+    fileprivate let kCurrentExerciseTagDefaultKey = "SCurrentExerciseTag"
+    fileprivate let kCurrentWorkoutNotesDefaultKey = "SCurrentWorkoutNotes"
     fileprivate let defaultNightscoutTreatmentPath = "/api/v1/treatments"
     private let defaultNightscoutAuthTestPath = "/api/v1/experiments/test"
+    let workoutNotesDefault = true
+    let exerciseTagDefault = "#x"
+    let nsapiSecretDefault = "xxxxxxxxxxx"
+    let nssiteURLDefault = "https://YOURSITE.herokuapp.com"
     fileprivate var _nssiteURL: String?
     var nssiteURL: String? {
         set(newNSurl) {
@@ -104,6 +110,36 @@ class APIConnector {
         }
         get {
             return _nsapiSecret
+        }
+    }
+    fileprivate var _exerciseTag: String? // = "#Exercise" as String
+    var exerciseTag: String? {
+        set(newexerciseTag) {
+            if ( newexerciseTag != nil ) {
+                UserDefaults.standard.setValue(newexerciseTag, forKey:kCurrentExerciseTagDefaultKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: kCurrentExerciseTagDefaultKey)
+            }
+            UserDefaults.standard.synchronize()
+            _exerciseTag = newexerciseTag
+        }
+        get {
+            return _exerciseTag
+        }
+    }
+    fileprivate var _workoutNotes: Bool? //True
+    var workoutNotes: Bool? {
+        set(newworkoutNotes) {
+            if ( newworkoutNotes != nil ) {
+                UserDefaults.standard.set(newworkoutNotes, forKey:kCurrentWorkoutNotesDefaultKey)
+            } else {
+                UserDefaults.standard.removeObject(forKey: kCurrentWorkoutNotesDefaultKey)
+            }
+            UserDefaults.standard.synchronize()
+            _workoutNotes = newworkoutNotes
+        }
+        get {
+            return _workoutNotes
         }
     }
     //KS
@@ -197,11 +233,43 @@ class APIConnector {
 
     // MARK: Initialization
     
+    func initNigthscoutSettings() {//KS
+        
+        if let nsUrl = UserDefaults.standard.string(forKey: kCurrentNSurlDefaultKey) {
+            nssiteURL = nsUrl
+        }
+        else {
+            nssiteURL = nssiteURLDefault
+        }
+        if let nsSecret = UserDefaults.standard.string(forKey: kCurrentNSsecretDefaultKey) {
+            nsapiSecret = nsSecret
+        }
+        else {
+            nsapiSecret = nsapiSecretDefault
+        }
+        if let xTag = UserDefaults.standard.string(forKey: kCurrentExerciseTagDefaultKey) {
+            exerciseTag = xTag
+        }
+        else {
+            exerciseTag = exerciseTagDefault
+        }
+        
+        if let xWorkoutNotes = UserDefaults.standard.value(forKey: kCurrentWorkoutNotesDefaultKey) {
+            workoutNotes = xWorkoutNotes as? Bool
+        }
+        else {
+            workoutNotes = workoutNotesDefault
+        }
+        print("Using nssiteURL: \(String(describing: self.nssiteURL))")
+        print("Using nsapiSecret: \(String(describing: self.nsapiSecret))")
+        print("Using exerciseTag: \(String(describing: self.exerciseTag))")
+        print("Using workoutNotes: \(String(describing: self.workoutNotes))")
+    }
+    
     /// Creator of APIConnector must call this function after init!
     func configure() -> APIConnector {
         
-        nsapiSecret = "xxxxxxxxxxx"//KS
-        nssiteURL = "https://YOURSITE.herokuapp.com"//KS
+        initNigthscoutSettings()//KS
         
         HealthKitUploadManager.sharedInstance.makeDataUploadRequestHandler = self.blipMakeDataUploadRequest
         self.baseUrl = URL(string: kServers[currentService!]!)!
@@ -250,6 +318,7 @@ class APIConnector {
         // Set our endpoint for login
         let endpoint = "auth/login"
         
+        initNigthscoutSettings()//KS
         checkAuth { (error) in //KS
             DDLogInfo("checkAuth: \(String(describing: error))")
         }
@@ -1221,7 +1290,7 @@ class APIConnector {
         let completion = { (response: URLResponse?, data: Data?, error: NSError?) -> Void in
             if let httpResponse = response as? HTTPURLResponse {
                 
-                if (httpResponse.statusCode == 200) {//201
+                if (httpResponse.statusCode == 201 || httpResponse.statusCode == 200) {//200
                     DDLogInfo("Sent note for groupid: \(String(describing: note.notes))")
                     
                     /*let jsonResult: NSDictionary = ((try? JSONSerialization.jsonObject(with: data!, options: JSONSerialization.ReadingOptions.mutableContainers)) as? NSDictionary)!

@@ -115,25 +115,31 @@ class HealthKitUploadTypeWorkout: HealthKitUploadType {
                 note.timestamp = workout.startDate //Date()
                 //_ = sampleToUploadDict.removeValue(forKey: "origin")
 
+                let api = APIConnector.connector()
                 if let theJSONData = try? JSONSerialization.data(
                     withJSONObject: sampleToUploadDict,
                     options: .prettyPrinted) {
                     let jsonString = String(data: theJSONData,
                                              encoding: .utf8)
                     print("JSON string = \(jsonString!)")
-                    var msg = "#exercise " + String(sampleToUploadDict["name"] as! String) + " "
+                    var msg = api.exerciseTag ?? ""
+                    msg = msg + String(sampleToUploadDict["name"] as! String) + " "
                     //msg = msg + String(format: "%f.2f", noteDuration) + " mins "
                     msg = msg + String (Int(noteDuration.rounded())) + " mins "
                     //msg = msg + String(format: "%.2f", noteKcal) + " kcal "
                     msg = msg + String(Int(noteKcal.rounded())) + " kcal "
                     print("note.messagetext string = \(msg)")
                     note.messagetext = msg
-                    APIConnector.connector().doPostWithNote(note: note)
-                    let enteredBy = "loop://\(UIDevice.current.name)"
-                    let nsnote = NightscoutTreatment(timestamp: workout.startDate, enteredBy: enteredBy, notes: msg,
-                                                     eventType: "Exercise", duration: noteDuration as Double)
-                    print("nsnote = \(String(describing: nsnote))")
-                    APIConnector.connector().doPostWithNSNote(note: nsnote)
+                    if api.workoutNotes == true {
+                        api.doPostWithNote(note: note)
+                    }
+                    if (api.nssiteURL != api.nssiteURLDefault && api.nsapiSecret != api.nsapiSecretDefault) {
+                        let enteredBy = "loop://\(UIDevice.current.name)"
+                        let nsnote = NightscoutTreatment(timestamp: workout.startDate, enteredBy: enteredBy, notes: msg,
+                                                         eventType: "Exercise", duration: noteDuration as Double)
+                        print("nsnote = \(String(describing: nsnote))")
+                        api.doPostWithNSNote(note: nsnote)
+                    }
                 }
                 //KS **end**
 
